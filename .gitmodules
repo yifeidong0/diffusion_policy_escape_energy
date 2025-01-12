@@ -1,0 +1,3 @@
+[submodule "lib/mppi_cbf"]
+	path = lib/mppi_cbf
+	url = https://github.com/yifeidong0/mppi_cbf.git
