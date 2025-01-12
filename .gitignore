@@ -4,3 +4,6 @@ tmp_imgs/*.*
 *-checkpoint.py
 *-checkpoint.ipynb
 *-checkpoint.yaml
+*.ckpt
+*.joblib
+
