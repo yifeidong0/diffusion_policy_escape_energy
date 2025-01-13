@@ -80,23 +80,15 @@ def unnormalize_data(ndata, stats):
 
 def preprocess_dataset(dataset):
     dataset["obs_encode"] = []
-    dataset["episode_ends"] = []
+    dataset["episode_ends"] = list(range(1, dataset["paths"].shape[0]+1))
 
-    current_idx = 0
-    for s, c in zip(dataset["state"], dataset["control"]):
-        dataset["episode_ends"].append(current_idx + s.shape[0])
-        current_idx += s.shape[0]
-
-    for s, info in zip(dataset["state"], dataset["info"]):
-        obs_encode = np.zeros((7, 7))
-        for center, radius in zip(info["obs_center"], info["obs_radius"]):
-            obs_encode[tuple((center - 1).astype(np.int32))] = radius
-        dataset["obs_encode"].append(np.vstack([obs_encode.flatten()] * s.shape[0]))
+    for ct, rad in zip(dataset["ellipse_centers"], dataset["ellipse_radii"]):
+        dataset["obs_encode"].append(np.hstack([ct, rad]).flatten()) # (12,), 4(ct,rad)+4+4
     return dataset
 
 
 # dataset
-class PlanarQuadrotorStateDataset(torch.utils.data.Dataset):
+class EscapeEnergy2DDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         dataset_path: str,
@@ -105,23 +97,26 @@ class PlanarQuadrotorStateDataset(torch.utils.data.Dataset):
         self.set_config(config)
         # read from zarr dataset
         dataset_root = joblib.load(dataset_path)
+        print("!!!!!!!!!!!", dataset_root.keys())
+        print("!!!!!!!!!!!paths", dataset_root["paths"].shape)
+        print("!!!!!!!!!!!object_starts", dataset_root["object_starts"].shape)
+
         # proprocessing
         dataset_root = preprocess_dataset(dataset_root)
         # All demonstration episodes are concatinated in the first dimension N
         train_data = {
             # (N, action_dim)
-            "action": np.concatenate(dataset_root["desired_state"], axis=0),
+            "action": dataset_root["paths"],
             # (N, obs_dim)
-            "obs": np.concatenate(dataset_root["state"], axis=0),
-            # (N, 7x7)
-            "obstacle": np.concatenate(dataset_root["obs_encode"], axis=0),
+            "obs": dataset_root["object_starts"],
+            # (N, 4x3)
+            "obstacle": np.array(dataset_root["obs_encode"]),
         }
-        print('111111action',train_data["action"].shape) # pred_horizon, action_dim
-        print('222222obs',train_data["obs"].shape) # obs_horizon * obs_dim + 7x7, -
-        print('333obstacle',train_data["obstacle"].shape) # pred_horizon, 7x7
-
         # Marks one-past the last index for each episode
         episode_ends = dataset_root["episode_ends"]
+        print("!!!!!!s!!!!!action", train_data["action"].shape)
+        print("!!!!!!s!!!!!obs", train_data["obs"].shape)
+        print("!!!!!!s!!!!!obstacle", train_data["obstacle"].shape)
 
         # compute start and end of each state-action sequence
         # also handles padding
@@ -135,17 +130,17 @@ class PlanarQuadrotorStateDataset(torch.utils.data.Dataset):
 
         # compute statistics and normalized data to [-1,1]
         stats = dict()
-        normalized_train_data = dict()
+        # normalized_train_data = dict()
         for key, data in train_data.items():
             if key == "obstacle":
                 continue
             stats[key] = get_data_stats(data)
-            normalized_train_data[key] = normalize_data(data, stats[key])
-        normalized_train_data["obstacle"] = train_data["obstacle"]
+            # normalized_train_data[key] = normalize_data(data, stats[key])
+        # normalized_train_data["obstacle"] = train_data["obstacle"]
 
         self.indices = indices
         self.stats = stats
-        self.normalized_train_data = normalized_train_data
+        self.normalized_train_data = train_data
 
     def __len__(self):
         # all possible segments of the dataset
@@ -153,24 +148,29 @@ class PlanarQuadrotorStateDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         # get the start/end indices for this datapoint
-        buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx = self.indices[idx]
+        # buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx = self.indices[idx]
 
         # get nomralized data using these indices
-        nsample = sample_sequence(
-            train_data=self.normalized_train_data,
-            sequence_length=self.pred_horizon,
-            buffer_start_idx=buffer_start_idx,
-            buffer_end_idx=buffer_end_idx,
-            sample_start_idx=sample_start_idx,
-            sample_end_idx=sample_end_idx,
-        )
+        # nsample = sample_sequence(
+        #     train_data=self.normalized_train_data,
+        #     sequence_length=self.pred_horizon,
+        #     buffer_start_idx=buffer_start_idx,
+        #     buffer_end_idx=buffer_end_idx,
+        #     sample_start_idx=sample_start_idx,
+        #     sample_end_idx=sample_end_idx,
+        # )
+        # nsample = self.normalized_train_data
 
-        # discard unused observations
-        # (obs_horiuzon * obs_dim + obstacle_encode_dim)
-        nsample["obs"] = np.concatenate(
-            [nsample["obs"][: self.obs_horizon, :].flatten(), nsample["obstacle"][0]],
-            axis=0,
-        )
+        nsample = dict()
+        nsample["action"] = self.normalized_train_data["action"][idx,:,:].reshape(1,-1)
+        nsample["obs"] = np.concatenate((self.normalized_train_data["obs"][idx,:], self.normalized_train_data["obstacle"][idx,:]))
+        nsample["obstacle"] = self.normalized_train_data["obstacle"][idx,:].reshape(1,-1)
+        print("__getitem__()")
+        print("idx",idx)
+        print('action',nsample["action"].shape)
+        print('obs',nsample["obs"].shape)
+        print('obstacle',nsample["obstacle"].shape)
+
         return nsample
 
     def set_config(self, config: Dict):

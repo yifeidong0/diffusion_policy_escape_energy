@@ -171,7 +171,7 @@ def plot(sol_path_list, cost):
     ax.set_yticks([0, 0.5, 1.0])
     ax.tick_params(direction='in', length=6, width=1, colors='k', grid_color='k', grid_alpha=0.5, labelsize=10)
     # ax.set_title('Escape path - objective of lowest incremental potential energy gain')
-    plt.savefig("escape-id-{:04d}.png".format(j), dpi=200)
+    plt.savefig("png/escape-id-{:04d}.png".format(j), dpi=200)
     # tikzplotlib.save("gamma-{}-{}.tex".format(gamma, j))
     # plt.show()
 
@@ -345,10 +345,6 @@ def downsample_path(path, cost, num_points=20):
 import joblib
 def save_dataset(filename, dataset):
     """Save the dataset to a file."""
-
-    # File name for saving
-    filename = "escape_from_u_data.joblib"
-
     # Save the object to a joblib file
     joblib.dump(dataset, filename)
 
@@ -400,7 +396,7 @@ if __name__ == "__main__":
         ou.OMPL_ERROR("Invalid log-level integer.")
 
     # Solve the planning problem
-    num_envs = 6
+    num_envs = 2
     costs = []
     paths = []
     ellipse_centers = []
@@ -412,7 +408,7 @@ if __name__ == "__main__":
 
         # Randomize the "start" position inside the U-shape
         start_x = np.random.uniform(centers[0][0] + rads[0][0], centers[2][0] - rads[2][0])
-        start_y = np.random.uniform(centers[1][1] + rads[1][1], 0.75)
+        start_y = np.random.uniform(centers[1][1] + rads[1][1], 0.7)
         start_pos = (start_x, start_y)
         goal_pos = (0.5, 0.0)
 
@@ -429,4 +425,4 @@ if __name__ == "__main__":
                "object_starts": np.array(object_starts), 
                "ellipse_centers": np.array(ellipse_centers), 
                "ellipse_radii": np.array(ellipse_radii)}
-    save_dataset("dataset_escape_from_u_2d.joblib", dataset)
+    save_dataset(f"dataset_escape_from_u_2d_{num_envs}_envs.joblib", dataset)
