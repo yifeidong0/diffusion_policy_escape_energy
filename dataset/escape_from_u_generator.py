@@ -146,20 +146,22 @@ def plot_ellipse(center, radius, ax):
     ax.fill(x, y, alpha=0.7, color='#f4a63e')
     ax.plot(x, y, alpha=0.7, color='#f4a63e')
 
-def plot(sol_path_list, normalizedCost):
-    # Plot the solution path
-    xpath = [state[0] for state in sol_path_list]
-    ypath = [state[1] for state in sol_path_list]
+def plot(sol_path_list, cost):
     fig, ax = plt.subplots()
-    ax.plot(xpath, ypath, color='#31a354')
+    if sol_path_list is not None:
+        # Plot the solution path
+        xpath = [state[0] for state in sol_path_list]
+        ypath = [state[1] for state in sol_path_list]
+        ax.plot(xpath, ypath, color='#31a354')
+        ax.scatter(xpath[0], ypath[0], color='r', s=100, label='Start')
 
     # create a circle object
     for i in range(len(rads)):
         plot_ellipse(centers[i], rads[i], ax)
 
     # set axis limits and aspect ratio
-    ax.text(0.02, 0.98, '$\\gamma=${}'.format(gamma), transform=ax.transAxes, verticalalignment='top', fontsize=17)
-    ax.text(0.02, 0.895, '$\\overline{{C}}(\\sigma^*)={:.2f}$'.format(normalizedCost), transform=ax.transAxes, verticalalignment='top', fontsize=17)
+    if cost is not None:
+        ax.text(0.02, 0.98, '$\\overline{{C}}(\\sigma^*)={:.2f}$'.format(cost), transform=ax.transAxes, verticalalignment='top', fontsize=17)
     ax.set_xlim([0, 1.])
     ax.set_ylim([0, 1.])
     ax.set_aspect('equal')
@@ -169,11 +171,11 @@ def plot(sol_path_list, normalizedCost):
     ax.set_yticks([0, 0.5, 1.0])
     ax.tick_params(direction='in', length=6, width=1, colors='k', grid_color='k', grid_alpha=0.5, labelsize=10)
     # ax.set_title('Escape path - objective of lowest incremental potential energy gain')
-    plt.savefig("gamma-{}-{}.png".format(gamma, j), dpi=200)
+    plt.savefig("escape-id-{:04d}.png".format(j), dpi=200)
     # tikzplotlib.save("gamma-{}-{}.tex".format(gamma, j))
     # plt.show()
 
-def plan(runTime, plannerType, objectiveType, fname, useIncrementalCost, visualize=0):
+def plan(runTime, plannerType, objectiveType, fname, start_pos, goal_pos, useIncrementalCost, visualize=0):
     # Construct the robot state space in which we're planning. We're
     # planning in [0,1]x[0,1], a subset of R^2.
     space = ob.RealVectorStateSpace(2)
@@ -192,10 +194,10 @@ def plan(runTime, plannerType, objectiveType, fname, useIncrementalCost, visuali
 
     # TODO: start and goal
     start = ob.State(space)
-    start[0], start[1] = 0.0, 0.0
+    start[0], start[1] = start_pos[0], start_pos[1]
 
     goal = ob.State(space)
-    goal[0], goal[1] = 1, .0
+    goal[0], goal[1] = goal_pos[0], goal_pos[1]
 
     # Energy of start and goal
     Es, Eg = start[1], goal[1]
@@ -247,14 +249,13 @@ def plan(runTime, plannerType, objectiveType, fname, useIncrementalCost, visuali
         sol_path_states = sol_path_geometric.getStates()
         sol_path_list = [state_to_list(state) for state in sol_path_states]
         sol_path_ys = [state[1] for state in sol_path_states]
-        pathPotentialCost = max(sol_path_ys)
+        pathPotentialCost = max(sol_path_ys) - start_pos[1]
         totalCost = gamma*pathLength + pathPotentialCost
-        normalizedCost = totalCost/referencePotentialCost
+        cost = totalCost
         
         print("pathPotentialCost: ", pathPotentialCost)
         print("pathLengthCost: ", pathLength)
-        print('Cost, c = gamma*pathLengthCost + pathPotentialCost: ', totalCost)
-        print('Normalized cost, c_bar = gamma*pathLengthCost/referencePotentialCost + 1: ', normalizedCost)
+        # print('Normalized cost, c_bar = gamma*pathLengthCost/referencePotentialCost + 1: ', cost)
         print('{0} found solution of path length {1:.4f} with an optimization ' \
             'objective value of {2:.4f}'.format( \
             optimizingPlanner.getName(), \
@@ -262,18 +263,101 @@ def plan(runTime, plannerType, objectiveType, fname, useIncrementalCost, visuali
             objValue))
         
         # plot the map and path
-        if visualize:
-            plot(sol_path_list, normalizedCost)
+        # if visualize:
+        #     plot(sol_path_list, totalCost)
 
         if fname:
             with open(fname, 'w') as outFile:
                 outFile.write(pdef.getSolutionPath().printAsMatrix())
     else:
         print("No solution found.")
-        return None, None, None
+        # if visualize:
+        #     plot(None, None)
+        return None, None
     
     print('===================================')
-    return pathPotentialCost, pathLength, totalCost
+    return pathPotentialCost, sol_path_list
+
+# Function to generate random ellipsoid dimensions and positions forming a U-shape
+def generate_u_shape():
+    # Randomize side dimensions of the U-shape
+    left_height = np.random.uniform(0.1, 0.4)
+    right_height = np.random.uniform(0.1, 0.4)
+    bottom_width = np.random.uniform(0.2, 0.4)
+
+    # Randomize radii of ellipsoids
+    rads = np.zeros((3, 2))
+    rads[0] = [np.random.uniform(0.05, 0.1), left_height]  # Left side
+    rads[1] = [bottom_width, np.random.uniform(0.05, 0.1)]  # Bottom side
+    rads[2] = [np.random.uniform(0.05, 0.1), right_height]  # Right side
+
+    # Randomize positions of ellipsoids
+    centers = np.zeros((3, 2))
+    centers[0] = [np.random.uniform(0.1, 0.2), np.random.uniform(0.4, 0.5)]  # Left side
+    centers[1] = [0.5, np.random.uniform(0.4, 0.5)]  # Bottom side
+    centers[2] = [np.random.uniform(0.8, 0.9), np.random.uniform(0.4, 0.5)]  # Right side
+
+    return centers, rads
+
+def post_process_path(sol_path_list, pathPotentialCost):
+    """Cut the path segment once it reaches below y=centers[1][1] - rads[1][1]"""
+    for i in range(len(sol_path_list)):
+        if sol_path_list[i][1] < centers[1][1] - rads[1][1]:
+            sol_path_list = sol_path_list[:i]
+            break
+    sol_path_list = downsample_path(sol_path_list, pathPotentialCost, num_points=20)
+    plot(sol_path_list, pathPotentialCost)
+
+    return sol_path_list
+
+from scipy.interpolate import CubicSpline
+def downsample_path(path, cost, num_points=20):
+    """
+    Downsample a 2D path to `num_points` with smooth interpolation.
+    
+    Args:
+        path (list of list): Original path as a list of [x, y] points.
+        num_points (int): Number of points in the downsampled path.
+    
+    Returns:
+        list of list: Downsampled smooth path with `num_points` points.
+    """
+    path = np.array(path)
+    x, y = path[:, 0], path[:, 1]
+
+    # Parameterize the path using cumulative distances
+    distances = np.sqrt(np.diff(x)**2 + np.diff(y)**2)
+    cumulative_distances = np.hstack(([0], np.cumsum(distances)))
+
+    # Create a cubic spline for each coordinate
+    cs_x = CubicSpline(cumulative_distances, x)
+    cs_y = CubicSpline(cumulative_distances, y)
+
+    # Create evenly spaced points along the path
+    uniform_distances = np.linspace(0, cumulative_distances[-1], num_points)
+    smooth_x = cs_x(uniform_distances)
+    smooth_y = cs_y(uniform_distances)
+
+    # Combine x and y into the downsampled path
+    downsampled_path = np.vstack((smooth_x, smooth_y)).T
+    return downsampled_path
+
+import joblib
+def save_dataset(filename, dataset):
+    """Save the dataset to a file."""
+
+    # File name for saving
+    filename = "escape_from_u_data.joblib"
+
+    # Save the object to a joblib file
+    joblib.dump(dataset, filename)
+
+    print(f"Data has been saved to {filename}")
+
+    # Optionally, load the object back to verify
+    loaded_data = joblib.load(filename)
+    # print("Loaded Data:", loaded_data)
+    print(loaded_data.keys())
 
 if __name__ == "__main__":
     # Create an argument parser
@@ -286,7 +370,7 @@ if __name__ == "__main__":
         choices=['LBTRRT', 'BFMTstar', 'BITstar', 'FMTstar', 'InformedRRTstar', 'PRMstar', 'RRTstar', \
         'SORRTstar'], \
         help='(Optional) Specify the optimal planner to use, defaults to RRTstar if not given.')
-    parser.add_argument('-o', '--objective', default='WeightedLengthAndPotential', \
+    parser.add_argument('-o', '--objective', default='PathPotential', \
         choices=['PathPotential', 'PathLength', 'ThresholdPathLength', \
         'WeightedLengthAndPotential'], \
         help='(Optional) Specify the optimization objective, defaults to PathLength if not given.')
@@ -316,66 +400,33 @@ if __name__ == "__main__":
         ou.OMPL_ERROR("Invalid log-level integer.")
 
     # Solve the planning problem
-    if runSingle:
-        rads = [[.05, .6], [.05, .3], [.05, .6]]
-        centers = [[.2, 0], [.5, .6], [.85, .25]]
-        
-        # Get reference energy cost
-        referencePotentialCost = max(centers[0][1]+rads[0][1], centers[2][1]+rads[2][1])
-        if centers[1][1] - rads[1][1] < 0:
-            referencePotentialCost = max(referencePotentialCost, centers[1][1] + rads[1][1])
-        print("referencePotentialCost: ", referencePotentialCost)
-        
-        pathPotentialCost, pathLength, totalCost = plan(args.runtime, args.planner, args.objective, args.file, useIncrementalCost, visualize=1)
-    else:    
-        gammas = [0.0] # [0.0, 1e-4, 1e-3, 1e-2, 5e-2, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0]
-        numOuterLoops = len(gammas)
-        numInnerLoops = 8
-        normalizedTotalCostMean = []
-        normalizedTotalCostStd = []
-        for i in range(numOuterLoops):
-            gamma = gammas[i]
-            normalizedTotalCostsAlpha = []
-            for j in range(numInnerLoops):
-                rads = np.random.rand(3,2)
-                rads[0][0] = rads[0][0]*0.05 + 0.04
-                rads[0][1] = rads[0][1]*0.8 + 0.1
-                rads[1][0] = rads[1][0]*0.05 + 0.04
-                rads[1][1] = rads[1][1]*0.3 + 0.2
-                rads[2][0] = rads[2][0]*0.05 + 0.04
-                rads[2][1] = rads[2][1]*0.7 + 0.2
+    num_envs = 6
+    costs = []
+    paths = []
+    ellipse_centers = []
+    ellipse_radii = []
+    object_starts = []
+    for j in range(num_envs):
+        # Generate U-shape configuration
+        centers, rads = generate_u_shape()
 
-                centers = np.random.rand(3,2)
-                centers[0][0] = centers[0][0]*0.1 + 0.15
-                centers[0][1] = 0
-                centers[1][0] = centers[1][0]*0.2 + 0.4
-                centers[1][1] = centers[1][1]*0.3 + 0.3
-                centers[2][0] = centers[2][0]*0.07 + 0.8
-                centers[2][1] = centers[2][1]*0.2 + 0.0
+        # Randomize the "start" position inside the U-shape
+        start_x = np.random.uniform(centers[0][0] + rads[0][0], centers[2][0] - rads[2][0])
+        start_y = np.random.uniform(centers[1][1] + rads[1][1], 0.75)
+        start_pos = (start_x, start_y)
+        goal_pos = (0.5, 0.0)
 
-                # Get reference energy cost
-                referencePotentialCost = max(centers[0][1]+rads[0][1], centers[2][1]+rads[2][1])
-                if centers[1][1] - rads[1][1] < 0:
-                    referencePotentialCost = max(referencePotentialCost, centers[1][1] + rads[1][1])
-                print("referencePotentialCost: ", referencePotentialCost)
-
-                pathPotentialCost, pathLength, totalCost = plan(args.runtime, args.planner, args.objective, args.file, useIncrementalCost, visualize=1)
-                if totalCost is not None:
-                    normalizedTotalCostsAlpha.append(totalCost/referencePotentialCost)
-            mean = sum(normalizedTotalCostsAlpha) / len(normalizedTotalCostsAlpha)
-            variance = sum((x - mean) ** 2 for x in normalizedTotalCostsAlpha) / len(normalizedTotalCostsAlpha)
-            std = variance ** 0.5
-            normalizedTotalCostMean.append(mean)
-            normalizedTotalCostStd.append(std)
-
-        # Plot gamma v.s. normalized total cost
-        mean = np.asarray(normalizedTotalCostMean)
-        std = np.asarray(normalizedTotalCostStd)
-        print("gammas: ", gammas)
-        print("mean: ", mean)
-        print("std: ", std)
-        plt.plot(gammas, mean, '-', color='#31a354', linewidth=2)
-        plt.fill_between(gammas, mean-std, mean+std, alpha=0.4, color='#31a354')
-        # plt.gca().set_xscale('log')
-        # plt.savefig("gamma-normalized-cost.png")
-        # plt.show()
+        pathPotentialCost, sol_path_list = plan(args.runtime, args.planner, args.objective, args.file, start_pos, goal_pos, useIncrementalCost, visualize=1)
+        if pathPotentialCost is not None:
+            sol_path_list = post_process_path(sol_path_list, pathPotentialCost)
+            costs.append(pathPotentialCost)
+            paths.append(sol_path_list)
+            object_starts.append(start_pos)
+            ellipse_centers.append(centers)
+            ellipse_radii.append(rads)
+    dataset = {"costs": np.array(costs), 
+               "paths": np.array(paths), 
+               "object_starts": np.array(object_starts), 
+               "ellipse_centers": np.array(ellipse_centers), 
+               "ellipse_radii": np.array(ellipse_radii)}
+    save_dataset("dataset_escape_from_u_2d.joblib", dataset)

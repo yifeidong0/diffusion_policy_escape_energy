@@ -6,4 +6,4 @@ tmp_imgs/*.*
 *-checkpoint.yaml
 *.ckpt
 *.joblib
-
+*.png
