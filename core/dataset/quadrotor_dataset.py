@@ -108,6 +108,10 @@ class PlanarQuadrotorStateDataset(torch.utils.data.Dataset):
         # proprocessing
         dataset_root = preprocess_dataset(dataset_root)
         # All demonstration episodes are concatinated in the first dimension N
+        print('desired_state',len(dataset_root["desired_state"])) # pred_horizon, action_dim
+        print('state',len(dataset_root["state"])) # obs_horizon * obs_dim + 7x7, -
+        print('obs_encode',len(dataset_root["obs_encode"])) # pred_horizon, 7x7
+        print('obs_encode',dataset_root["obs_encode"][0].shape) # pred_horizon, 7x7
         train_data = {
             # (N, action_dim)
             "action": np.concatenate(dataset_root["desired_state"], axis=0),
@@ -149,6 +153,7 @@ class PlanarQuadrotorStateDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         # all possible segments of the dataset
+        print('!!!!!! len(self.indices)',len(self.indices)) # 1e6
         return len(self.indices)
 
     def __getitem__(self, idx):

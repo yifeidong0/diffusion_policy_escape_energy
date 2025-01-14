@@ -78,14 +78,68 @@ def unnormalize_data(ndata, stats):
     return data
 
 
-def preprocess_dataset(dataset):
+def preprocess_dataset(dataset, num_data=32):
+    dataset["state"] = []
+    dataset["desired_state"] = []
     dataset["obs_encode"] = []
-    dataset["episode_ends"] = list(range(1, dataset["paths"].shape[0]+1))
+    dataset["episode_ends"] = []
 
-    for ct, rad in zip(dataset["ellipse_centers"], dataset["ellipse_radii"]):
-        dataset["obs_encode"].append(np.hstack([ct, rad]).flatten()) # (12,), 4(ct,rad)+4+4
+    # state
+    for i in range(num_data):
+        dataset["state"].append(dataset["paths"][i])
+
+    # desired state
+    # for path in dataset["paths"]:
+    #     desired_path = np.concatenate([path[1:], [path[-1]]], axis=0)
+    #     dataset["desired_state"].append(desired_path)
+    for i in range(num_data):
+        desired_path = np.concatenate([dataset["paths"][i][1:], [dataset["paths"][i][-1]]], axis=0)
+        dataset["desired_state"].append(desired_path)
+
+    # print('state',len(dataset["state"]))
+    # print('desired_state',len(dataset["desired_state"]))
+    # print('state',dataset["state"][0])
+    # print('desired_state',dataset["desired_state"][0])
+
+    # obs_encode 
+    # print('obs_encode',len(dataset["obs_encode"]))
+    # print('obs_encode',dataset["obs_encode"][0])
+    for i in range(num_data):
+        obs_encode = np.zeros((20, 12))
+        obs_encode = np.hstack([dataset["ellipse_centers"][i], dataset["ellipse_radii"][i]]).flatten()
+        obs_encode = np.tile(obs_encode, (20, 1))
+        dataset["obs_encode"].append(obs_encode)
+
+    current_idx = 0
+    for s in dataset["state"]:
+        dataset["episode_ends"].append(current_idx + s.shape[0])
+        current_idx += s.shape[0]
+
     return dataset
 
+# state 291
+# desired_state 291
+# control 291
+# info 291
+# obs_encode 291
+# ------------------
+# state (234, 6)
+# desired_state (234, 6)
+# obs_encode (234, 49)
+#### control (234, 54, 2)
+# ------------------
+# 111111action (122743, 6)
+# 222222obs (122743, 6)
+# 333obstacle (122743, 49)
+
+# ----------------------
+# PLAN!
+# !!!!!! dataset_root dict_keys(['costs', 'paths', 'object_starts', 'ellipse_centers', 'ellipse_radii'])
+# !!!!!!!!!!!!!! paths (29868, 20, 2) -> state list(29868, [20,2]) -> obs (29868x20,2])
+# !!!!!! paths (29868, 20, 2) -> desired_state list(29868, [20,2]) -> action (29868x20,2])
+# !!!!!! ellipse_radii (29868, 3, 2)
+# !!!!!! ellipse_centers (29868, 3, 2) -> obs_encode list(29868, [20,12]) -> obstacle (29868x20, 12)
+#### !!!!!! object_starts (29868, 2)
 
 # dataset
 class EscapeEnergy2DDataset(torch.utils.data.Dataset):
@@ -97,26 +151,31 @@ class EscapeEnergy2DDataset(torch.utils.data.Dataset):
         self.set_config(config)
         # read from zarr dataset
         dataset_root = joblib.load(dataset_path)
-        print("!!!!!!!!!!!", dataset_root.keys())
-        print("!!!!!!!!!!!paths", dataset_root["paths"].shape)
-        print("!!!!!!!!!!!object_starts", dataset_root["object_starts"].shape)
+        print('!!!!!! dataset_root',dataset_root.keys())
+        print('!!!!!! paths',dataset_root['paths'].shape)
+        print('!!!!!! object_starts',dataset_root['object_starts'].shape)
+        print('!!!!!! ellipse_radii',dataset_root['ellipse_radii'].shape)
+        print('!!!!!! ellipse_centers',dataset_root['ellipse_centers'].shape)
+        print('----------------------')
 
         # proprocessing
         dataset_root = preprocess_dataset(dataset_root)
         # All demonstration episodes are concatinated in the first dimension N
         train_data = {
             # (N, action_dim)
-            "action": dataset_root["paths"],
+            "action": np.concatenate(dataset_root["desired_state"], axis=0),
             # (N, obs_dim)
-            "obs": dataset_root["object_starts"],
-            # (N, 4x3)
-            "obstacle": np.array(dataset_root["obs_encode"]),
+            "obs": np.concatenate(dataset_root["state"], axis=0),
+            # (N, 7x7)
+            "obstacle": np.concatenate(dataset_root["obs_encode"], axis=0),
         }
+        print('!!!!!! action',train_data["action"].shape) # pred_horizon, action_dim
+        print('!!!!!! obs',train_data["obs"].shape) # obs_horizon * obs_dim + 7x7, -
+        print('!!!!!! obstacle',train_data["obstacle"].shape) # pred_horizon, 7x7
+        print('----------------------')
+
         # Marks one-past the last index for each episode
         episode_ends = dataset_root["episode_ends"]
-        print("!!!!!!s!!!!!action", train_data["action"].shape)
-        print("!!!!!!s!!!!!obs", train_data["obs"].shape)
-        print("!!!!!!s!!!!!obstacle", train_data["obstacle"].shape)
 
         # compute start and end of each state-action sequence
         # also handles padding
@@ -130,47 +189,47 @@ class EscapeEnergy2DDataset(torch.utils.data.Dataset):
 
         # compute statistics and normalized data to [-1,1]
         stats = dict()
-        # normalized_train_data = dict()
+        normalized_train_data = dict()
         for key, data in train_data.items():
             if key == "obstacle":
                 continue
             stats[key] = get_data_stats(data)
-            # normalized_train_data[key] = normalize_data(data, stats[key])
-        # normalized_train_data["obstacle"] = train_data["obstacle"]
+            normalized_train_data[key] = normalize_data(data, stats[key])
+        normalized_train_data["obstacle"] = train_data["obstacle"]
 
         self.indices = indices
         self.stats = stats
-        self.normalized_train_data = train_data
+        self.normalized_train_data = normalized_train_data
 
     def __len__(self):
         # all possible segments of the dataset
+        print('!!!!!! len(self.indices)',len(self.indices)) # 6e5
         return len(self.indices)
 
     def __getitem__(self, idx):
         # get the start/end indices for this datapoint
-        # buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx = self.indices[idx]
+        buffer_start_idx, buffer_end_idx, sample_start_idx, sample_end_idx = self.indices[idx]
 
         # get nomralized data using these indices
-        # nsample = sample_sequence(
-        #     train_data=self.normalized_train_data,
-        #     sequence_length=self.pred_horizon,
-        #     buffer_start_idx=buffer_start_idx,
-        #     buffer_end_idx=buffer_end_idx,
-        #     sample_start_idx=sample_start_idx,
-        #     sample_end_idx=sample_end_idx,
-        # )
-        # nsample = self.normalized_train_data
+        nsample = sample_sequence(
+            train_data=self.normalized_train_data,
+            sequence_length=self.pred_horizon,
+            buffer_start_idx=buffer_start_idx,
+            buffer_end_idx=buffer_end_idx,
+            sample_start_idx=sample_start_idx,
+            sample_end_idx=sample_end_idx,
+        )
 
-        nsample = dict()
-        nsample["action"] = self.normalized_train_data["action"][idx,:,:].reshape(1,-1)
-        nsample["obs"] = np.concatenate((self.normalized_train_data["obs"][idx,:], self.normalized_train_data["obstacle"][idx,:]))
-        nsample["obstacle"] = self.normalized_train_data["obstacle"][idx,:].reshape(1,-1)
-        print("__getitem__()")
-        print("idx",idx)
-        print('action',nsample["action"].shape)
-        print('obs',nsample["obs"].shape)
-        print('obstacle',nsample["obstacle"].shape)
-
+        # discard unused observations
+        # (obs_horiuzon * obs_dim + obstacle_encode_dim)
+        nsample["obs"] = np.concatenate(
+            [nsample["obs"][: self.obs_horizon, :].flatten(), nsample["obstacle"][0]],
+            axis=0,
+        )
+        # print('----------nsample------------')
+        # print('!!!!!! obs',nsample["obs"].shape)
+        # print('!!!!!! action',nsample["action"].shape)
+        # print('!!!!!! obstacle',nsample["obstacle"].shape)
         return nsample
 
     def set_config(self, config: Dict):

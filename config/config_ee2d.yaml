@@ -1,8 +1,8 @@
 name: "escape_energy_2d"
 
-pred_horizon: 1 # predict pred_horizon steps but execute only action_horizon steps
-obs_horizon: 1
-action_horizon: 1
+pred_horizon: 8 # has to be 2^n (n>1). predict pred_horizon steps but execute only action_horizon steps
+obs_horizon: 2
+action_horizon: 8
 
 controller:
     common:
@@ -10,7 +10,7 @@ controller:
         use_single_step_inference: true
     networks:
         obs_dim: 2 # start position of the escape path
-        action_dim: 40 # escape path composed of 20 waypoints
+        action_dim: 2 # escape path composed of 20 waypoints
         obstacle_encode_dim: 12 # radii and positions of 3 obstacles
     noise_scheduler:
         type: "ddpm"
@@ -39,22 +39,22 @@ cbf_clf_controller:
 
 trainer:
     use_ema: true
-    batch_size: 4
+    batch_size: 256
     optimizer:
         name: "adamw"
         learning_rate: 1.0e-4
         weight_decay: 1.0e-6
     lr_scheduler:
         name: "cosine"
-        num_warmup_steps: 5
+        num_warmup_steps: 500
 
 dataloader:
-    batch_size: 4
+    batch_size: 256
 
 normalizer:
     action:
-        min: [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,]
-        max: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,]
+        min: [-1,-1]
+        max: [1,1]
     observation:
         min: [-1, -1]
         max: [1, 1]

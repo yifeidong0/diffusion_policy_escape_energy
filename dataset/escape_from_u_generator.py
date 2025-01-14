@@ -171,7 +171,7 @@ def plot(sol_path_list, cost):
     ax.set_yticks([0, 0.5, 1.0])
     ax.tick_params(direction='in', length=6, width=1, colors='k', grid_color='k', grid_alpha=0.5, labelsize=10)
     # ax.set_title('Escape path - objective of lowest incremental potential energy gain')
-    plt.savefig("png/escape-id-{:04d}.png".format(j), dpi=200)
+    # plt.savefig("png/escape-id-{:04d}.png".format(j), dpi=200)
     # tikzplotlib.save("gamma-{}-{}.tex".format(gamma, j))
     # plt.show()
 
@@ -396,30 +396,39 @@ if __name__ == "__main__":
         ou.OMPL_ERROR("Invalid log-level integer.")
 
     # Solve the planning problem
-    num_envs = 2
+    num_envs = int(3e4)
     costs = []
     paths = []
     ellipse_centers = []
     ellipse_radii = []
     object_starts = []
     for j in range(num_envs):
-        # Generate U-shape configuration
-        centers, rads = generate_u_shape()
+        print(f"# Environment {j}")
+        try:
+            # Generate U-shape configuration
+            centers, rads = generate_u_shape()
 
-        # Randomize the "start" position inside the U-shape
-        start_x = np.random.uniform(centers[0][0] + rads[0][0], centers[2][0] - rads[2][0])
-        start_y = np.random.uniform(centers[1][1] + rads[1][1], 0.7)
-        start_pos = (start_x, start_y)
-        goal_pos = (0.5, 0.0)
+            # Randomize the "start" position inside the U-shape
+            start_x = np.random.uniform(centers[0][0] + rads[0][0], centers[2][0] - rads[2][0])
+            start_y = np.random.uniform(centers[1][1] + rads[1][1], 0.7)
+            start_pos = (start_x, start_y)
+            goal_pos = (0.5, 0.0)
 
-        pathPotentialCost, sol_path_list = plan(args.runtime, args.planner, args.objective, args.file, start_pos, goal_pos, useIncrementalCost, visualize=1)
-        if pathPotentialCost is not None:
-            sol_path_list = post_process_path(sol_path_list, pathPotentialCost)
-            costs.append(pathPotentialCost)
-            paths.append(sol_path_list)
-            object_starts.append(start_pos)
-            ellipse_centers.append(centers)
-            ellipse_radii.append(rads)
+            # Plan the path
+            pathPotentialCost, sol_path_list = plan(args.runtime, args.planner, args.objective, args.file, start_pos, goal_pos, useIncrementalCost, visualize=1)
+
+            if pathPotentialCost is not None:
+                sol_path_list = post_process_path(sol_path_list, pathPotentialCost)
+                costs.append(pathPotentialCost)
+                paths.append(sol_path_list)
+                object_starts.append(start_pos)
+                ellipse_centers.append(centers)
+                ellipse_radii.append(rads)
+
+        except Exception as e:
+            print(f"Error in environment {j}: {e}")
+            continue  # Skip to the next iteration if an error occurs
+
     dataset = {"costs": np.array(costs), 
                "paths": np.array(paths), 
                "object_starts": np.array(object_starts), 
