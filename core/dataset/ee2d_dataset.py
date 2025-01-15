@@ -147,6 +147,7 @@ class EscapeEnergy2DDataset(torch.utils.data.Dataset):
         self,
         dataset_path: str,
         config: Dict,
+        num_data: int = 32,
     ):
         self.set_config(config)
         # read from zarr dataset
@@ -159,7 +160,7 @@ class EscapeEnergy2DDataset(torch.utils.data.Dataset):
         print('----------------------')
 
         # proprocessing
-        dataset_root = preprocess_dataset(dataset_root)
+        dataset_root = preprocess_dataset(dataset_root, num_data)
         # All demonstration episodes are concatinated in the first dimension N
         train_data = {
             # (N, action_dim)

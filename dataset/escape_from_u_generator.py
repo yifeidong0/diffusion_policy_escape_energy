@@ -146,7 +146,7 @@ def plot_ellipse(center, radius, ax):
     ax.fill(x, y, alpha=0.7, color='#f4a63e')
     ax.plot(x, y, alpha=0.7, color='#f4a63e')
 
-def plot(sol_path_list, cost):
+def plot(sol_path_list, cost, centers, rads):
     fig, ax = plt.subplots()
     if sol_path_list is not None:
         # Plot the solution path
@@ -279,7 +279,7 @@ def plan(runTime, plannerType, objectiveType, fname, start_pos, goal_pos, useInc
     return pathPotentialCost, sol_path_list
 
 # Function to generate random ellipsoid dimensions and positions forming a U-shape
-def generate_u_shape():
+def generate_u_obstacles():
     # Randomize side dimensions of the U-shape
     left_height = np.random.uniform(0.1, 0.4)
     right_height = np.random.uniform(0.1, 0.4)
@@ -306,7 +306,7 @@ def post_process_path(sol_path_list, pathPotentialCost):
             sol_path_list = sol_path_list[:i]
             break
     sol_path_list = downsample_path(sol_path_list, pathPotentialCost, num_points=20)
-    plot(sol_path_list, pathPotentialCost)
+    plot(sol_path_list, pathPotentialCost, centers, rads)
 
     return sol_path_list
 
@@ -396,7 +396,7 @@ if __name__ == "__main__":
         ou.OMPL_ERROR("Invalid log-level integer.")
 
     # Solve the planning problem
-    num_envs = int(3e4)
+    num_envs = int(1)
     costs = []
     paths = []
     ellipse_centers = []
@@ -406,7 +406,7 @@ if __name__ == "__main__":
         print(f"# Environment {j}")
         try:
             # Generate U-shape configuration
-            centers, rads = generate_u_shape()
+            centers, rads = generate_u_obstacles()
 
             # Randomize the "start" position inside the U-shape
             start_x = np.random.uniform(centers[0][0] + rads[0][0], centers[2][0] - rads[2][0])

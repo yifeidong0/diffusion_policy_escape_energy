@@ -107,6 +107,7 @@ class QuadrotorDiffusionPolicy(BaseController):
                     naction = self.noise_scheduler.step(model_output=noise_pred, timestep=k, sample=naction).prev_sample
 
                 if self.use_clf_cbf_guidance:
+                    print('!!!!!!!!!!use_clf_cbf_guidance')
                     diffusing_action = self.normalizer.unnormalize_data(
                         naction.detach().to("cpu").numpy().squeeze(), stats=self.norm_stats["act"]
                     )  # (pred_horizon, 6)

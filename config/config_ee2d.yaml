@@ -1,13 +1,13 @@
 name: "escape_energy_2d"
 
-pred_horizon: 8 # has to be 2^n (n>1). predict pred_horizon steps but execute only action_horizon steps
-obs_horizon: 2
-action_horizon: 8
+pred_horizon: 16 # has to be 2^n (n>1). predict pred_horizon steps but execute only action_horizon steps
+obs_horizon: 4
+action_horizon: 16
 
 controller:
     common:
         sampling_time: 0.1  # sec
-        use_single_step_inference: true
+        use_single_step_inference: false
     networks:
         obs_dim: 2 # start position of the escape path
         action_dim: 2 # escape path composed of 20 waypoints
@@ -53,11 +53,11 @@ dataloader:
 
 normalizer:
     action:
-        min: [-1,-1]
+        min: [0,0]
         max: [1,1]
     observation:
-        min: [-1, -1]
-        max: [1, 1]
+        min: [0,0]
+        max: [1,1]
 
 simulator:
     m_q: 1.0 # kg

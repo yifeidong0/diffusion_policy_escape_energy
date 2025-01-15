@@ -30,6 +30,7 @@ class PlanarQuadrotorDiffusionPolicyTrainer(BaseDiffusionPolicyTrainer):
         self.dataset = dataset
         self.set_config(config)
         self.device = get_device() if device is None else torch.device(device)
+        print(f"Using device: {self.device}")
 
         self.net.to(self.device)
 
