@@ -175,6 +175,60 @@ def plot(sol_path_list, cost, centers, rads):
     # tikzplotlib.save("gamma-{}-{}.tex".format(gamma, j))
     # plt.show()
 
+def plot_multiple(sol_path_list, cost_list, 
+                  centers_list, rads_list, 
+                  generated_path_list=None, generated_cost_list=None):
+    fig, axes = plt.subplots(4, 5, figsize=(20, 16))
+    axes = axes.flatten()
+
+    for idx, ax in enumerate(axes):
+        print(f"Plotting environment {idx}")
+        if idx < len(sol_path_list):
+            sol_path = sol_path_list[idx]
+            cost = cost_list[idx]
+            centers = centers_list[idx]
+            rads = rads_list[idx]
+
+            # Plot the solution path from sampling-based planner
+            if sol_path is not None:
+                xpath = [state[0] for state in sol_path]
+                ypath = [state[1] for state in sol_path]
+                ax.plot(xpath, ypath, color='#31a354', label='BIT*')
+                ax.scatter(xpath[0], ypath[0], color='r', s=100, label='Start')
+
+            # Plot the generated path from diffusion models
+            if generated_path_list is not None and generated_cost_list is not None:
+                generated_path = generated_path_list[idx]
+                generated_path_cost = generated_cost_list[idx]
+                if generated_path is not None:
+                    xpath = [state[0] for state in generated_path]
+                    ypath = [state[1] for state in generated_path]
+                    ax.plot(xpath, ypath, color='#3182bd', label='DP')
+                    ax.text(0.02, 0.88, '$C(\\sigma)={:.2f}$'.format(generated_path_cost), transform=ax.transAxes, verticalalignment='top', fontsize=10)
+
+            # Plot the ellipses
+            for i in range(len(rads)):
+                plot_ellipse(centers[i], rads[i], ax)
+
+            # Set axis limits, labels, and cost text
+            if cost is not None:
+                ax.text(0.02, 0.98, '$C(\\sigma^*)={:.2f}$'.format(cost), transform=ax.transAxes, verticalalignment='top', fontsize=10)
+            ax.set_xlim([0, 1.])
+            ax.set_ylim([0, 1.])
+            ax.set_aspect('equal')
+            ax.set_xlabel('x', fontsize=10)
+            ax.set_ylabel('y', fontsize=10)
+            ax.set_xticks([0, 0.5, 1.0])
+            ax.set_yticks([0, 0.5, 1.0])
+            ax.legend(loc='upper right', fontsize=8)
+            ax.tick_params(direction='in', length=6, width=1, colors='k', grid_color='k', grid_alpha=0.5, labelsize=8)
+
+        else:
+            ax.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
 def plan(runTime, plannerType, objectiveType, fname, start_pos, goal_pos, useIncrementalCost, visualize=0):
     # Construct the robot state space in which we're planning. We're
     # planning in [0,1]x[0,1], a subset of R^2.
