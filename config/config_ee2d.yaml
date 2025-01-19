@@ -37,6 +37,9 @@ cbf_clf_controller:
     penalty_slack_cbf: 1.0e+3
     penalty_slack_clf: 1.0
 
+ee2d_guidance:
+    lambda: 1.0
+
 trainer:
     use_ema: true
     batch_size: 256

@@ -182,7 +182,6 @@ def plot_multiple(sol_path_list, cost_list,
     axes = axes.flatten()
 
     for idx, ax in enumerate(axes):
-        print(f"Plotting environment {idx}")
         if idx < len(sol_path_list):
             sol_path = sol_path_list[idx]
             cost = cost_list[idx]
