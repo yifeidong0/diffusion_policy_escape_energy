@@ -23,11 +23,12 @@ import numpy as np
 
 # Hyperparameters
 useGoalSpace = 0
-useIncrementalCost = 0
-runtime = 3.0
+useIncrementalCost = 1
+runtime = 1.0
 planner = 'BITstar' # 'BITstar'
 runSingle = 0
-gamma = 0.0
+gamma = 0.03
+VISUALIZE = 0
 
 class ValidityChecker(ob.StateValidityChecker):
     def isValid(self, state):
@@ -173,7 +174,7 @@ def plot(sol_path_list, cost, centers, rads):
     # ax.set_title('Escape path - objective of lowest incremental potential energy gain')
     # plt.savefig("png/escape-id-{:04d}.png".format(j), dpi=200)
     # tikzplotlib.save("gamma-{}-{}.tex".format(gamma, j))
-    # plt.show()
+    plt.show()
 
 def plot_multiple(sol_path_list, cost_list, 
                   centers_list, rads_list, 
@@ -228,7 +229,7 @@ def plot_multiple(sol_path_list, cost_list,
     plt.tight_layout()
     plt.show()
 
-def plan(runTime, plannerType, objectiveType, fname, start_pos, goal_pos, useIncrementalCost, visualize=0):
+def plan(runTime, plannerType, objectiveType, fname, centers, rads, start_pos, goal_pos, useIncrementalCost, visualize=1):
     # Construct the robot state space in which we're planning. We're
     # planning in [0,1]x[0,1], a subset of R^2.
     space = ob.RealVectorStateSpace(2)
@@ -316,16 +317,16 @@ def plan(runTime, plannerType, objectiveType, fname, start_pos, goal_pos, useInc
             objValue))
         
         # plot the map and path
-        # if visualize:
-        #     plot(sol_path_list, totalCost)
+        if visualize:
+            plot(sol_path_list, pathPotentialCost, centers, rads)
 
         if fname:
             with open(fname, 'w') as outFile:
                 outFile.write(pdef.getSolutionPath().printAsMatrix())
     else:
         print("No solution found.")
-        # if visualize:
-        #     plot(None, None)
+        if visualize:
+            plot(None, None, centers, rads)
         return None, None
     
     print('===================================')
@@ -333,33 +334,67 @@ def plan(runTime, plannerType, objectiveType, fname, start_pos, goal_pos, useInc
 
 # Function to generate random ellipsoid dimensions and positions forming a U-shape
 def generate_u_obstacles():
-    # Randomize side dimensions of the U-shape
-    left_height = np.random.uniform(0.1, 0.4)
-    right_height = np.random.uniform(0.1, 0.4)
-    bottom_width = np.random.uniform(0.2, 0.4)
+    # Randomize number of circles (between 3 and 8)
+    num_circles = np.random.randint(4, 9)  # Max is 8 circles
 
-    # Randomize radii of ellipsoids
-    rads = np.zeros((3, 2))
-    rads[0] = [np.random.uniform(0.05, 0.1), left_height]  # Left side
-    rads[1] = [bottom_width, np.random.uniform(0.05, 0.1)]  # Bottom side
-    rads[2] = [np.random.uniform(0.05, 0.1), right_height]  # Right side
+    # Initialize lists for circle centers and radii
+    centers = []
+    radii = []
 
-    # Randomize positions of ellipsoids
-    centers = np.zeros((3, 2))
-    centers[0] = [np.random.uniform(0.1, 0.2), np.random.uniform(0.4, 0.5)]  # Left side
-    centers[1] = [0.5, np.random.uniform(0.4, 0.5)]  # Bottom side
-    centers[2] = [np.random.uniform(0.8, 0.9), np.random.uniform(0.4, 0.5)]  # Right side
+    # Generate random circles with centers on the lower half of the circle
+    for i in range(num_circles):
+        # Randomize the radius of each circle between 0.1 and 0.2 (larger radii)
+        radius = np.random.uniform(0.06, 0.14)
+        radii.append([radius, radius])  # Keeping as ellipses [radius, radius]
 
-    return centers, rads
+        # Generate random angles for uniform distribution along the semicircle
+        # angle = np.random.uniform(0, np.pi)  # Only the lower half circle (y < 0.5)
+        angle = np.linspace(0, np.pi, num_circles)[i] + np.random.uniform(-0.2, 0.2)  # Only the lower half circle (y < 0.5)
+
+        # Calculate the x and y coordinates from the angle
+        x_pos = 0.5 + np.cos(angle) * 0.25  # x is centered at 0.5 with radius 1
+        y_pos = 0.5 - np.sin(angle) * 0.25  # y is always less than 0.5 (below the center)
+
+        centers.append([x_pos, y_pos])
+
+    # Convert to numpy arrays
+    centers = np.array(centers)
+    radii = np.array(radii)
+
+    # Randomize the "start" position inside the half circle, ensuring it's not inside any circle
+    while True:
+        # Randomize start position inside the semicircle (x - 0.5)^2 + (y - 0.5)^2 <= 1 and y < 0.5
+        angle = np.random.uniform(0, np.pi)
+        rad = np.random.uniform(0.0, 0.25)
+        start_x = 0.5 + np.cos(angle) * rad
+        start_y = 0.5 - np.sin(angle) * rad
+        start_pos = (start_x, start_y)
+
+        # Check if the start position is inside any circle
+        inside = False
+        for i in range(num_circles):
+            dist = np.linalg.norm(np.array(start_pos) - centers[i])
+            if dist < radii[i][0]:  # If the start position is inside the circle
+                inside = True
+                break
+
+        if not inside:
+            break  # Exit loop when a valid start position is found
+
+    # Goal position is fixed
+    goal_pos = (0.5, 0)
+
+    return centers, radii, start_pos, goal_pos
 
 def post_process_path(sol_path_list, pathPotentialCost):
     """Cut the path segment once it reaches below y=centers[1][1] - rads[1][1]"""
-    for i in range(len(sol_path_list)):
-        if sol_path_list[i][1] < centers[1][1] - rads[1][1]:
-            sol_path_list = sol_path_list[:i]
-            break
+    # for i in range(len(sol_path_list)):
+    #     if sol_path_list[i][1] < centers[1][1] - rads[1][1]:
+    #         sol_path_list = sol_path_list[:i]
+    #         break
     sol_path_list = downsample_path(sol_path_list, pathPotentialCost, num_points=20)
-    plot(sol_path_list, pathPotentialCost, centers, rads)
+    if VISUALIZE:
+        plot(sol_path_list, pathPotentialCost, centers, rads)
 
     return sol_path_list
 
@@ -419,7 +454,7 @@ if __name__ == "__main__":
         choices=['LBTRRT', 'BFMTstar', 'BITstar', 'FMTstar', 'InformedRRTstar', 'PRMstar', 'RRTstar', \
         'SORRTstar'], \
         help='(Optional) Specify the optimal planner to use, defaults to RRTstar if not given.')
-    parser.add_argument('-o', '--objective', default='PathPotential', \
+    parser.add_argument('-o', '--objective', default='WeightedLengthAndPotential', \
         choices=['PathPotential', 'PathLength', 'ThresholdPathLength', \
         'WeightedLengthAndPotential'], \
         help='(Optional) Specify the optimization objective, defaults to PathLength if not given.')
@@ -449,7 +484,7 @@ if __name__ == "__main__":
         ou.OMPL_ERROR("Invalid log-level integer.")
 
     # Solve the planning problem
-    num_envs = int(1)
+    num_envs = int(2)
     costs = []
     paths = []
     ellipse_centers = []
@@ -459,16 +494,17 @@ if __name__ == "__main__":
         print(f"# Environment {j}")
         try:
             # Generate U-shape configuration
-            centers, rads = generate_u_obstacles()
+            centers, rads, start_pos, goal_pos = generate_u_obstacles()
 
             # Randomize the "start" position inside the U-shape
-            start_x = np.random.uniform(centers[0][0] + rads[0][0], centers[2][0] - rads[2][0])
-            start_y = np.random.uniform(centers[1][1] + rads[1][1], 0.7)
-            start_pos = (start_x, start_y)
-            goal_pos = (0.5, 0.0)
+            # start_x = np.random.uniform(centers[0][0] + rads[0][0], centers[2][0] - rads[2][0])
+            # start_y = np.random.uniform(centers[1][1] + rads[1][1], 0.7)
+            # start_pos = (start_x, start_y)
+            # goal_pos = (0.5, 0.0)
 
             # Plan the path
-            pathPotentialCost, sol_path_list = plan(args.runtime, args.planner, args.objective, args.file, start_pos, goal_pos, useIncrementalCost, visualize=1)
+            pathPotentialCost, sol_path_list = plan(args.runtime, args.planner, args.objective, args.file, 
+                                                    centers, rads, start_pos, goal_pos, useIncrementalCost, visualize=VISUALIZE)
 
             if pathPotentialCost is not None:
                 sol_path_list = post_process_path(sol_path_list, pathPotentialCost)
@@ -476,7 +512,7 @@ if __name__ == "__main__":
                 paths.append(sol_path_list)
                 object_starts.append(start_pos)
                 ellipse_centers.append(centers)
-                ellipse_radii.append(rads)
+                ellipse_radii.append([rads[i][0] for i in range(len(rads))])
 
         except Exception as e:
             print(f"Error in environment {j}: {e}")
@@ -485,6 +521,7 @@ if __name__ == "__main__":
     dataset = {"costs": np.array(costs), 
                "paths": np.array(paths), 
                "object_starts": np.array(object_starts), 
-               "ellipse_centers": np.array(ellipse_centers), 
-               "ellipse_radii": np.array(ellipse_radii)}
+               "ellipse_centers": ellipse_centers, 
+               "ellipse_radii": ellipse_radii}
+    print(dataset)
     save_dataset(f"dataset_escape_from_u_2d_{num_envs}_envs.joblib", dataset)
