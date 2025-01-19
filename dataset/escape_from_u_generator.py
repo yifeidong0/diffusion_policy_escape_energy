@@ -23,7 +23,7 @@ import numpy as np
 
 # Hyperparameters
 useGoalSpace = 0
-useIncrementalCost = 1
+useIncrementalCost = 1 # set True if need smooth paths
 runtime = 1.0
 planner = 'BITstar' # 'BITstar'
 runSingle = 0
@@ -137,8 +137,8 @@ def state_to_list(state):
 def plot_ellipse(center, radius, ax):
     u = center[0]    # x-position of the center
     v = center[1]    # y-position of the center
-    a = radius[0]    # radius on the x-axis
-    b = radius[1]    # radius on the y-axis
+    a = radius    # radius on the x-axis
+    b = radius    # radius on the y-axis
 
     t = np.linspace(0, 2*np.pi, 100)
     x = u + a * np.cos(t)
@@ -335,7 +335,7 @@ def plan(runTime, plannerType, objectiveType, fname, centers, rads, start_pos, g
 # Function to generate random ellipsoid dimensions and positions forming a U-shape
 def generate_u_obstacles():
     # Randomize number of circles (between 3 and 8)
-    num_circles = np.random.randint(4, 9)  # Max is 8 circles
+    num_circles = np.random.randint(6,7)  # Max is 8 circles
 
     # Initialize lists for circle centers and radii
     centers = []
@@ -496,12 +496,6 @@ if __name__ == "__main__":
             # Generate U-shape configuration
             centers, rads, start_pos, goal_pos = generate_u_obstacles()
 
-            # Randomize the "start" position inside the U-shape
-            # start_x = np.random.uniform(centers[0][0] + rads[0][0], centers[2][0] - rads[2][0])
-            # start_y = np.random.uniform(centers[1][1] + rads[1][1], 0.7)
-            # start_pos = (start_x, start_y)
-            # goal_pos = (0.5, 0.0)
-
             # Plan the path
             pathPotentialCost, sol_path_list = plan(args.runtime, args.planner, args.objective, args.file, 
                                                     centers, rads, start_pos, goal_pos, useIncrementalCost, visualize=VISUALIZE)
@@ -521,7 +515,7 @@ if __name__ == "__main__":
     dataset = {"costs": np.array(costs), 
                "paths": np.array(paths), 
                "object_starts": np.array(object_starts), 
-               "ellipse_centers": ellipse_centers, 
-               "ellipse_radii": ellipse_radii}
+               "ellipse_centers": np.array(ellipse_centers), 
+               "ellipse_radii": np.array(ellipse_radii)}
     print(dataset)
     save_dataset(f"dataset_escape_from_u_2d_{num_envs}_envs.joblib", dataset)

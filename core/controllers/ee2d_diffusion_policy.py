@@ -189,7 +189,7 @@ class EscapeEnergy2DDiffusionPolicy(BaseController):
             obstacle_info: {"center": list, "radius": list}
             diffusing_action: (pred_horizon, 2)
         """
-        obstacles = obs_dict["obs_encode"][0].reshape(3, 4)
+        obstacles = obs_dict["obs_encode"][0].reshape(6, 3) # 6 circles
         centers = obstacles[:, :2].tolist()
         radii = obstacles[:, 2:].tolist()
         obstacle_info = {"center": centers, "radius": radii}

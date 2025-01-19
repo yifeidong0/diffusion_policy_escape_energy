@@ -25,91 +25,105 @@ class EscapeEnergy2DGuidanceController(BaseController):
         """
         self.obstacle_info = obstacle_info
         self.num_obstacles = len(self.obstacle_info["center"])
-        self.cost_weights = np.array([0., 1e-4, 0.0, 0.]) # TODO: from config
+        # self.cost_weights = np.array([0,0,0,])
+        self.cost_weights = np.array([0.001, 1e-3, 0.001,]) # TODO: from config
         cost_gradients = -(self.cost_weights[0] * self._potential_func_dot(pred_action)
-                           + self.cost_weights[1] * self._collision_avoidance_func_dot(obstacle_info, pred_action)
-                           + self.cost_weights[2] * self._path_length_func_dot(pred_action)
-                           + self.cost_weights[3] * self._goal_reach_func_dot(obstacle_info, pred_action))
+                           + self.cost_weights[1] * self._sdf_collision_avoidance_func_dot(obstacle_info, pred_action)
+                           + self.cost_weights[2] * self._path_length_func_dot(pred_action))
+                        #    + self.cost_weights[3] * self._goal_reach_func_dot(obstacle_info, pred_action))
         # cost_gradients = np.zeros(pred_action.shape)
         return cost_gradients
 
-    # @staticmethod
-    # def _collision_avoidance_func(obstacle_info, pred_action) -> np.ndarray:
-    #     costs = np.zeros(pred_action.shape[0])
-    #     for k, act in enumerate(pred_action.tolist()):
-    #         cost = 0
-    #         for obs_radius, obs_center in zip(obstacle_info["radius"], obstacle_info["center"]):
-    #             # each obstacle is an ellipse
-    #             cost += 1 - (act[0] - obs_center[0]) ** 2 / obs_radius[0] ** 2 - (act[1] - obs_center[1]) ** 2 / obs_radius[1] ** 2
-    #         costs[k] = cost
-    #     return costs
-                
-    # @staticmethod
-    # def _collision_avoidance_func_dot(obstacle_info, pred_action) -> np.ndarray:
-    #     cost_grads = np.zeros(pred_action.shape)
-    #     for k, act in enumerate(pred_action.tolist()):
-    #         grad = np.zeros(pred_action.shape[1])
-    #         for obs_radius, obs_center in zip(obstacle_info["radius"], obstacle_info["center"]):
-    #             # each obstacle is an ellipse
-    #             dist_x = (act[0] - obs_center[0]) ** 2 / obs_radius[0] ** 2
-    #             dist_y = (act[1] - obs_center[1]) ** 2 / obs_radius[1] ** 2
-                
-    #             # Compute gradient only if inside the ellipse (dist_x + dist_y <= 1)
-    #             if dist_x + dist_y <= 1:
-    #                 grad[0] += -2 * (act[0] - obs_center[0]) / obs_radius[0] ** 2
-    #                 grad[1] += -2 * (act[1] - obs_center[1]) / obs_radius[1] ** 2
-    #             else:
-    #                 grad[0] += 0  # Outside the ellipse, no gradient contribution
-    #                 grad[1] += 0
+    def compute_sdf_and_gradient(self, circles, grid_size=100):
+        """
+        Compute the Signed Distance Function (SDF) and its gradient for a set of circular obstacles in 2D space.
 
-    #         cost_grads[k] = grad
-    #     return cost_grads
+        Args:
+            circles: List of tuples representing circle centers (x, y) and radii (r).
+                    Example: [(x1, y1, r1), (x2, y2, r2), ...]
+            grid_size: The resolution of the grid for SDF calculation.
 
-    def _collision_avoidance_func_dot(self, obstacle_info, pred_action) -> np.ndarray:
+        Returns:
+            sdf_grid: 2D numpy array representing the SDF values on the grid.
+            grad_x: 2D numpy array representing the x-component of the gradient.
+            grad_y: 2D numpy array representing the y-component of the gradient.
+        """
+        # Create a grid of points within the unit square [0, 1] x [0, 1]
+        x = np.linspace(0, 1, grid_size)
+        y = np.linspace(0, 1, grid_size)
+        X, Y = np.meshgrid(x, y)
+        points = np.stack([X.ravel(), Y.ravel()], axis=-1)
+
+        # Initialize the SDF grid and gradient components
+        sdf_grid = np.full(X.shape, np.inf)  # Set all values initially to infinity
+        grad_x = np.zeros(X.shape)
+        grad_y = np.zeros(Y.shape)
+
+        # Iterate over each circle and compute the SDF and gradient
+        min_dist = np.full(X.shape, np.inf)
+        for cx, cy, r in circles:
+            # Calculate the distance from each point in the grid to the circle center
+            dist = np.linalg.norm(points - np.array([cx, cy]), axis=1) - r
+            sdf_grid = np.minimum(sdf_grid, dist.reshape(X.shape))
+            min_dist = np.minimum(min_dist, dist.reshape(X.shape))
+
+            # Compute gradient of the distance to the circle center
+            dist_x = X - cx
+            dist_y = Y - cy
+            norm = np.sqrt(dist_x**2 + dist_y**2)
+            
+            # Avoid division by zero for points at the circle center (though these should not exist in our grid)
+            norm[norm == 0] = np.inf
+            grad_x = np.where(min_dist == dist.reshape(X.shape), dist_x / norm, grad_x)
+            grad_y = np.where(min_dist == dist.reshape(X.shape), dist_y / norm, grad_y)
+
+        return sdf_grid, grad_x, grad_y
+
+    def _sdf_collision_avoidance_func_dot(self, obstacle_info, pred_action) -> np.ndarray:
         cost_grads = np.zeros(pred_action.shape)
+        
+        # Compute the Signed Distance Function (SDF) and its gradient for the obstacles
+        circles = list(np.hstack((obstacle_info["center"], obstacle_info["radius"])))
+        sdf_grid, grad_x, grad_y = self.compute_sdf_and_gradient(circles, grid_size=100)
         
         # Iterate through each waypoint and compute gradient for each
         for k in range(pred_action.shape[0] - 1):
-            print('!!!!!!!!!!!k,',k,)
             act1 = pred_action[k]
             act2 = pred_action[k + 1]
-            grad = np.zeros((2, pred_action.shape[1]))
+            grad = self._sdf_collision_grad(act1, act2, sdf_grid, grad_x, grad_y)
 
-            for obs_radius, obs_center in zip(obstacle_info["radius"], obstacle_info["center"]):
-                # Gradients along the line segment between act1 and act2
-                # print('!!!!!!!!!!!obs,', obs_radius, obs_center)
-                grad += self._line_segment_collision_grad(act1, act2, obs_radius, obs_center)
-
-            cost_grads[k:k+2] += grad
+            cost_grads[k:k+2] -= grad
 
         # Compute gradient for the last waypoint
-        for obs_radius, obs_center in zip(obstacle_info["radius"], obstacle_info["center"]):
-            cost_grads[-1] += self._point_collision_grad(pred_action[-1], obs_radius, obs_center, t=1)[1,:]
+        cost_grads[-1] -= self._sdf_point_collision_grad(pred_action[-1], sdf_grid, grad_x, grad_y)
 
         return cost_grads
 
-    def _point_collision_grad(self, act, obs_radius, obs_center, t) -> np.ndarray:
-        # Compute gradient of the collision cost at a given point
-        grad = np.zeros((2,2))
-        dist_x = (act[0] - obs_center[0]) ** 2 / obs_radius[0] ** 2
-        dist_y = (act[1] - obs_center[1]) ** 2 / obs_radius[1] ** 2
-        if dist_x + dist_y <= 1:
-            print('!!!!!!!!!!!1-dist_x - dist_y,',1-dist_x - dist_y,)
-            grad[0,0] = -2 * (1-t) * (act[0] - obs_center[0]) / obs_radius[0] ** 2
-            grad[0,1] = -2 * (1-t) * (act[1] - obs_center[1]) / obs_radius[1] ** 2
-            grad[1,0] = -2 * t * (act[0] - obs_center[0]) / obs_radius[0] ** 2
-            grad[1,1] = -2 * t * (act[1] - obs_center[1]) / obs_radius[1] ** 2
-            print('!!!!!!!!!!!grad,',grad)
+    def _sdf_collision_grad(self, act1, act2, sdf_grid, grad_x, grad_y, epsilon=0):
+        grad = np.zeros((2, 2))
+        # Linearly interpolate between act1 and act2 to compute the gradient at each point
+        for t in np.linspace(0, 1, 1, endpoint=False):  # Arbitrary 10 samples between the points
+            point = (1 - t) * act1 + t * act2
+            idx_x = max(0, min(sdf_grid.shape[0]-1, int(point[0] * sdf_grid.shape[0])))
+            idx_y = max(0, min(sdf_grid.shape[1]-1, int(point[1] * sdf_grid.shape[1])))
+
+            # Compute the gradient based on the SDF gradient
+            if sdf_grid[idx_x, idx_y] < epsilon:
+                sdf_gradient = np.array([[(1-t) * grad_x[idx_x, idx_y], (1-t) * grad_y[idx_x, idx_y]],
+                                         [t * grad_x[idx_x, idx_y], t * grad_y[idx_x, idx_y]]])
+                grad += sdf_gradient  # Add the gradient for each sampled point
+        
         return grad
 
-    def _line_segment_collision_grad(self, act1, act2, obs_radius, obs_center, num_samples=5) -> np.ndarray:
-        # Gradients for points along the line segment
-        grad = np.zeros((2,2))
-        for t in np.linspace(0, 1, num_samples, endpoint=False):
-            print('!!!!!!!!!!!t,',t,)
-            point = (1 - t) * act1 + t * act2
-            grad += self._point_collision_grad(point, obs_radius, obs_center, t)
-        return grad
+    def _sdf_point_collision_grad(self, act, sdf_grid, grad_x, grad_y, epsilon=0):
+        # Compute the gradient of the collision cost at a given point
+        idx_x = max(0, min(sdf_grid.shape[0]-1, int(act[0] * sdf_grid.shape[0])))
+        idx_y = max(0, min(sdf_grid.shape[1]-1, int(act[1] * sdf_grid.shape[1])))
+
+        if sdf_grid[idx_x, idx_y] < epsilon:
+            return np.array([grad_x[idx_x, idx_y], grad_y[idx_x, idx_y]])
+        else:
+            return np.zeros(2)
     
     @staticmethod
     def _path_length_func_dot(pred_action) -> np.ndarray:
@@ -134,11 +148,11 @@ class EscapeEnergy2DGuidanceController(BaseController):
             dcdtau[np.argmax(pred_action[:,1]),1] = 1
             return dcdtau
 
-    @staticmethod
-    def _goal_reach_func_dot(obstacle_info, pred_action) -> np.ndarray:
-        grads = np.zeros(pred_action.shape)
-        grads[-1,1] = 2 * (pred_action[-1,1]-obstacle_info["center"][1][1])
-        return grads
+    # @staticmethod
+    # def _goal_reach_func_dot(obstacle_info, pred_action) -> np.ndarray:
+    #     grads = np.zeros(pred_action.shape)
+    #     grads[-1,1] = 2 * (pred_action[-1,1]-obstacle_info["center"][1][1])
+    #     return grads
     
     def set_config(self, config: Dict):
         self.cbf_alpha = config["cbf_clf_controller"]["cbf_alpha"]
@@ -147,137 +161,3 @@ class EscapeEnergy2DGuidanceController(BaseController):
         # self.penalty_slack_clf = config["cbf_clf_controller"]["penalty_slack_clf"]
         self.denoising_guidance_step = config["cbf_clf_controller"]["denoising_guidance_step"]
         # self.quadrotor_params = config["simulator"]
-
-    # @staticmethod
-    # def _barrier_func(y, z, obs_y, obs_z, obs_r) -> float:
-    #     return (y - obs_y) ** 2 + (z - obs_z) ** 2 - (obs_r) ** 2
-
-    # @staticmethod
-    # def _barrier_func_dot(y, z, obs_y, obs_z) -> list:
-    #     return [2 * (y - obs_y), 2 * (z - obs_z)]
-
-    # @staticmethod
-    # def _lyapunoc_func(y, z, des_y, des_z) -> float:
-    #     return (y - des_y) ** 2 + (z - des_z) ** 2
-
-    # @staticmethod
-    # def _lyapunov_func_dot(y, z, des_y, des_z) -> list:
-    #     return [2 * (y - des_y), 2 * (z - des_z)]
-
-    # @staticmethod
-    # def _define_QP_problem_data(
-    #     u1: float,
-    #     u2: float,
-    #     cbf_alpha: float,
-    #     clf_gamma: float,
-    #     penalty_slack_cbf: float,
-    #     penalty_slack_clf: float,
-    #     h: list,
-    #     coeffs_dhdx: list,
-    #     v: list,
-    #     coeffs_dvdx: list,
-    #     vmin=-15.0,
-    #     vmax=15.0,
-    # ):
-    #     vmin, vmax = -15.0, 15.0
-
-    #     P = sparse.csc_matrix([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, penalty_slack_cbf, 0], [0, 0, 0, penalty_slack_clf]])
-    #     q = np.array([-u1, -u2, 0, 0])
-    #     A = sparse.csc_matrix(
-    #         [c for c in coeffs_dhdx]
-    #         + [c for c in coeffs_dvdx]
-    #         + [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
-    #     )
-    #     lb = np.array([-cbf_alpha * h_ for h_ in h] + [-np.inf for _ in v] + [vmin, vmin, 0, 0])
-    #     ub = np.array([np.inf for _ in h] + [-clf_gamma * v_ for v_ in v] + [vmax, vmax, np.inf, np.inf])
-    #     return P, q, A, lb, ub
-
-    # @staticmethod
-    # def _get_quadrotor_state(state):
-    #     y, y_dot, z, z_dot, phi, phi_dot = state
-    #     return y, y_dot, z, z_dot, phi, phi_dot
-
-    # def _calculate_cbf_coeffs(self, state: np.ndarray, obs_center: List, obs_radius: List, minimal_distance: float):
-    #     """
-    #     Let barrier function be h and system state x, the CBF constraint
-    #     h_dot(x) >= - alpha * h + δ
-    #     """
-    #     h = []  # barrier values (here, remaining distance to each obstacle)
-    #     coeffs_dhdx = []  # dhdt = dhdx * dxdt = dhdx * u
-    #     for center, radius in zip(obs_center, obs_radius):
-    #         y, _, z, _, _, _ = self._get_quadrotor_state(state)
-    #         h.append(self._barrier_func(y, z, center[0], center[1], radius + minimal_distance))
-    #         # Additional [1, 0] incorporates the CBF slack variable into the constraint
-    #         coeffs_dhdx.append(self._barrier_func_dot(y, z, center[0], center[1]) + [1, 0])
-    #     return h, coeffs_dhdx
-
-    # def _calculate_clf_coeffs(self, state: np.ndarray, target_y: float, _target_z: float):
-    #     """
-    #     Let Lyapunov function be v and system state x, the CBF constraint
-    #     v_dot(x) - δ <= - gamma * v
-    #     """
-    #     y, _, z, _, _, _ = self._get_quadrotor_state(state)
-    #     v = [self._lyapunoc_func(y, z, target_y, _target_z)]
-    #     # Additional [0, -1] incorporates the CLF slack variable into the constraint
-    #     coeffs_dvdx = [self._lyapunov_func_dot(y, z, target_y, _target_z) + [0, -1]]
-    #     return v, coeffs_dvdx
-
-    # def compute_c(
-    #     self,
-    #     state: np.ndarray,
-    #     control: np.ndarray,
-    #     obs_center: List,
-    #     obs_radius: List,
-    #     cbf_alpha: float = 15.0,
-    #     clf_gamma: float = 0.01,
-    #     penalty_slack_cbf: float = 1e2,
-    #     penalty_slack_clf: float = 1.0,
-    #     target_position: tuple = (5.0, 5.0),
-    # ):
-    #     """
-    #     Calculate the safe command by solveing the following optimization problem
-
-    #                 minimize  || u - u_nom ||^2 + k * δ^2
-    #                   u, δ
-    #                 s.t.
-    #                         h'(x) ≥ -𝛼 * h(x) - δ1
-    #                         v'(x) ≤ -γ * v(x) + δ2
-    #                         u_min ≤ u ≤ u_max
-    #                             0 ≤ δ1,δ2 ≤ inf
-    #     where
-    #         u = [ux, uy] is the control input in x and y axis respectively.
-    #         δ is the slack variable
-    #         h(x) is the control barrier function and h'(x) its derivative
-    #         v(x) is the lyapunov function and v'(x) its derivative
-
-    #     The problem above can be formulated as QP (ref: https://osqp.org/docs/solver/index.html)
-
-    #                 minimize 1/2 * x^T * Px + q^T x
-    #                     x
-    #                 s.t.
-    #                             l ≤ Ax ≤ u
-    #     where
-    #         x = [ux, uy, δ1, δ2]
-
-    #     """
-    #     u1, u2 = control
-    #     target_y, target_z = target_position
-
-    #     # Calculate values of the barrier function and coeffs in h_dot to state
-    #     h, coeffs_dhdx = self._calculate_cbf_coeffs(state, obs_center, obs_radius, self.quadrotor_params["l_q"])
-    #     # Calculate value of the lyapunov function and coeffs in v_dot to state
-    #     v, coeffs_dvdx = self._calculate_clf_coeffs(state, target_y, target_z)
-
-    #     # Define problem
-    #     P, q, A, lb, ub = self._define_QP_problem_data(
-    #         u1, u2, cbf_alpha, clf_gamma, penalty_slack_cbf, penalty_slack_clf, h, coeffs_dhdx, v, coeffs_dvdx
-    #     )
-
-    #     # Solve QP
-    #     prob = osqp.OSQP()
-    #     prob.setup(P, q, A, lb, ub, verbose=False, time_limit=0)
-    #     # Solve QP problem
-    #     res = prob.solve()
-
-    #     safe_u1, safe_u2, _, _ = res.x
-    #     return np.array([safe_u1, safe_u2])

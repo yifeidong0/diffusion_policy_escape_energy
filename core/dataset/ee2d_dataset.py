@@ -78,36 +78,23 @@ def unnormalize_data(ndata, stats):
     return data
 
 
-def preprocess_dataset(dataset, num_data=32):
+def preprocess_dataset(dataset, num_data=32, num_waypoints=20, obstacle_encode_dim=18):
     dataset["state"] = []
     dataset["desired_state"] = []
     dataset["obs_encode"] = []
     dataset["episode_ends"] = []
 
-    # state
     for i in range(num_data):
         dataset["state"].append(dataset["paths"][i])
 
-    # desired state
-    # for path in dataset["paths"]:
-    #     desired_path = np.concatenate([path[1:], [path[-1]]], axis=0)
-    #     dataset["desired_state"].append(desired_path)
     for i in range(num_data):
         desired_path = np.concatenate([dataset["paths"][i][1:], [dataset["paths"][i][-1]]], axis=0)
         dataset["desired_state"].append(desired_path)
 
-    # print('state',len(dataset["state"]))
-    # print('desired_state',len(dataset["desired_state"]))
-    # print('state',dataset["state"][0])
-    # print('desired_state',dataset["desired_state"][0])
-
-    # obs_encode 
-    # print('obs_encode',len(dataset["obs_encode"]))
-    # print('obs_encode',dataset["obs_encode"][0])
     for i in range(num_data):
-        obs_encode = np.zeros((20, 12))
-        obs_encode = np.hstack([dataset["ellipse_centers"][i], dataset["ellipse_radii"][i]]).flatten()
-        obs_encode = np.tile(obs_encode, (20, 1))
+        # obs_encode = np.zeros((num_waypoints, obstacle_encode_dim))
+        obs_encode = np.hstack([dataset["ellipse_centers"][i], dataset["ellipse_radii"][i].reshape(-1,1)]).flatten()
+        obs_encode = np.tile(obs_encode, (num_waypoints, 1))
         dataset["obs_encode"].append(obs_encode)
 
     current_idx = 0
@@ -152,24 +139,29 @@ class EscapeEnergy2DDataset(torch.utils.data.Dataset):
         self.set_config(config)
         # read from zarr dataset
         dataset_root = joblib.load(dataset_path)
-        print('!!!!!! dataset_root',dataset_root.keys())
-        print('!!!!!! paths',dataset_root['paths'].shape)
-        print('!!!!!! object_starts',dataset_root['object_starts'].shape)
-        print('!!!!!! ellipse_radii',dataset_root['ellipse_radii'].shape)
-        print('!!!!!! ellipse_centers',dataset_root['ellipse_centers'].shape)
-        print('----------------------')
+        # print('!!!!!! dataset_root',dataset_root.keys())
+        # print('!!!!!! paths',dataset_root['paths'].shape)
+        # print('!!!!!! object_starts',dataset_root['object_starts'].shape)
+        # print('!!!!!! ellipse_radii',dataset_root['ellipse_radii'].shape)
+        # print('!!!!!! ellipse_centers',dataset_root['ellipse_centers'].shape)
+        # print('----------------------')
 
         # proprocessing
-        dataset_root = preprocess_dataset(dataset_root, num_data)
+        self.num_waypoints = dataset_root["paths"][0].shape[0]
+        dataset_root = preprocess_dataset(dataset_root, 
+                                          num_data, 
+                                          num_waypoints=self.num_waypoints, 
+                                          obstacle_encode_dim=self.obstacle_encode_dim)
         # All demonstration episodes are concatinated in the first dimension N
         train_data = {
             # (N, action_dim)
             "action": np.concatenate(dataset_root["desired_state"], axis=0),
             # (N, obs_dim)
             "obs": np.concatenate(dataset_root["state"], axis=0),
-            # (N, 7x7)
+            # (N, 3x6)
             "obstacle": np.concatenate(dataset_root["obs_encode"], axis=0),
         }
+        print('!!!!!! num_waypoints',self.num_waypoints) # 20
         print('!!!!!! action',train_data["action"].shape) # pred_horizon, action_dim
         print('!!!!!! obs',train_data["obs"].shape) # obs_horizon * obs_dim + 7x7, -
         print('!!!!!! obstacle',train_data["obstacle"].shape) # pred_horizon, 7x7
@@ -204,7 +196,7 @@ class EscapeEnergy2DDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         # all possible segments of the dataset
-        print('!!!!!! len(self.indices)',len(self.indices)) # 6e5
+        # print('!!!!!! len(self.indices)',len(self.indices))
         return len(self.indices)
 
     def __getitem__(self, idx):
@@ -238,3 +230,4 @@ class EscapeEnergy2DDataset(torch.utils.data.Dataset):
         self.obs_horizon = config["obs_horizon"]
         self.action_horizon = config["action_horizon"]
         self.pred_horizon = config["pred_horizon"]
+        self.obstacle_encode_dim = config["controller"]["networks"]["obstacle_encode_dim"]
