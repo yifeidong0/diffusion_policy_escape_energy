@@ -26,7 +26,7 @@ class EscapeEnergy2DGuidanceController(BaseController):
         self.obstacle_info = obstacle_info
         self.num_obstacles = len(self.obstacle_info["center"])
         # self.cost_weights = np.array([0,0,0,])
-        self.cost_weights = np.array([0.001, 1e-3, 0.001,]) # TODO: from config
+        self.cost_weights = np.array([1e-3, 5e-3, 1e-4,]) # TODO: from config
         cost_gradients = -(self.cost_weights[0] * self._potential_func_dot(pred_action)
                            + self.cost_weights[1] * self._sdf_collision_avoidance_func_dot(obstacle_info, pred_action)
                            + self.cost_weights[2] * self._path_length_func_dot(pred_action))
@@ -99,10 +99,10 @@ class EscapeEnergy2DGuidanceController(BaseController):
 
         return cost_grads
 
-    def _sdf_collision_grad(self, act1, act2, sdf_grid, grad_x, grad_y, epsilon=0):
+    def _sdf_collision_grad(self, act1, act2, sdf_grid, grad_x, grad_y, epsilon=0.02, num_samples=3):
         grad = np.zeros((2, 2))
         # Linearly interpolate between act1 and act2 to compute the gradient at each point
-        for t in np.linspace(0, 1, 1, endpoint=False):  # Arbitrary 10 samples between the points
+        for t in np.linspace(0, 1, num_samples, endpoint=False):  # Arbitrary 10 samples between the points
             point = (1 - t) * act1 + t * act2
             idx_x = max(0, min(sdf_grid.shape[0]-1, int(point[0] * sdf_grid.shape[0])))
             idx_y = max(0, min(sdf_grid.shape[1]-1, int(point[1] * sdf_grid.shape[1])))
@@ -115,7 +115,7 @@ class EscapeEnergy2DGuidanceController(BaseController):
         
         return grad
 
-    def _sdf_point_collision_grad(self, act, sdf_grid, grad_x, grad_y, epsilon=0):
+    def _sdf_point_collision_grad(self, act, sdf_grid, grad_x, grad_y, epsilon=0.02):
         # Compute the gradient of the collision cost at a given point
         idx_x = max(0, min(sdf_grid.shape[0]-1, int(act[0] * sdf_grid.shape[0])))
         idx_y = max(0, min(sdf_grid.shape[1]-1, int(act[1] * sdf_grid.shape[1])))

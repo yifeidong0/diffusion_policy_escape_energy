@@ -1,8 +1,8 @@
 name: "escape_energy_2d"
 
-pred_horizon: 4 # has to be 2^n (n>1). predict pred_horizon steps but execute only action_horizon steps
+pred_horizon: 24 # has to be 2^n (n>1). predict pred_horizon steps but execute only action_horizon steps
 obs_horizon: 4
-action_horizon: 4
+action_horizon: 24
 
 controller:
     common:

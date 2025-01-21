@@ -333,7 +333,9 @@ def plan(runTime, plannerType, objectiveType, fname, centers, rads, start_pos, g
     return pathPotentialCost, sol_path_list
 
 # Function to generate random ellipsoid dimensions and positions forming a U-shape
-def generate_u_obstacles():
+def generate_u_obstacles(fix_obstacles=1, 
+                         fixed_radii=[0.1,0.15,0.12,0.06,0.10,0.135],
+                         fixed_angle_offsets=[0.2, 0.1, 0.0, 0.1, -0.2, 0.15]):
     # Randomize number of circles (between 3 and 8)
     num_circles = np.random.randint(6,7)  # Max is 8 circles
 
@@ -344,12 +346,14 @@ def generate_u_obstacles():
     # Generate random circles with centers on the lower half of the circle
     for i in range(num_circles):
         # Randomize the radius of each circle between 0.1 and 0.2 (larger radii)
-        radius = np.random.uniform(0.06, 0.14)
+        radius = np.random.uniform(0.06, 0.14) if not fix_obstacles else fixed_radii[i]
         radii.append([radius, radius])  # Keeping as ellipses [radius, radius]
 
         # Generate random angles for uniform distribution along the semicircle
-        # angle = np.random.uniform(0, np.pi)  # Only the lower half circle (y < 0.5)
-        angle = np.linspace(0, np.pi, num_circles)[i] + np.random.uniform(-0.2, 0.2)  # Only the lower half circle (y < 0.5)
+        if not fix_obstacles:
+            angle = np.linspace(0, np.pi, num_circles)[i] + np.random.uniform(-0.2, 0.2)  # Only the lower half circle (y < 0.5)
+        else:
+            angle = np.linspace(0, np.pi, num_circles)[i] + fixed_angle_offsets[i]
 
         # Calculate the x and y coordinates from the angle
         x_pos = 0.5 + np.cos(angle) * 0.25  # x is centered at 0.5 with radius 1
@@ -394,6 +398,7 @@ def post_process_path(sol_path_list, pathPotentialCost):
     #         break
     sol_path_list = downsample_path(sol_path_list, pathPotentialCost, num_points=20)
     if VISUALIZE:
+        print("VISUALIZE post-processed path")
         plot(sol_path_list, pathPotentialCost, centers, rads)
 
     return sol_path_list
@@ -484,7 +489,7 @@ if __name__ == "__main__":
         ou.OMPL_ERROR("Invalid log-level integer.")
 
     # Solve the planning problem
-    num_envs = int(2)
+    num_envs = int(1024)
     costs = []
     paths = []
     ellipse_centers = []
@@ -492,6 +497,8 @@ if __name__ == "__main__":
     object_starts = []
     for j in range(num_envs):
         print(f"# Environment {j}")
+        # np.random.seed(0)
+
         try:
             # Generate U-shape configuration
             centers, rads, start_pos, goal_pos = generate_u_obstacles()
@@ -507,7 +514,6 @@ if __name__ == "__main__":
                 object_starts.append(start_pos)
                 ellipse_centers.append(centers)
                 ellipse_radii.append([rads[i][0] for i in range(len(rads))])
-
         except Exception as e:
             print(f"Error in environment {j}: {e}")
             continue  # Skip to the next iteration if an error occurs
@@ -517,5 +523,4 @@ if __name__ == "__main__":
                "object_starts": np.array(object_starts), 
                "ellipse_centers": np.array(ellipse_centers), 
                "ellipse_radii": np.array(ellipse_radii)}
-    print(dataset)
-    save_dataset(f"dataset_escape_from_u_2d_{num_envs}_envs.joblib", dataset)
+    save_dataset(f"dataset_escape_from_u_2d_{num_envs}_envs_fixed_obstacles.joblib", dataset)
